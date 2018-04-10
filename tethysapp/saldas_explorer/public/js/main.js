@@ -278,3 +278,14 @@ function find_var_index(item,data){
     }
     return index
 }
+
+function find_gsvar_index(item,data){
+    var index = -1;
+    for (var i = 0; i < data.length; ++i) {
+        if (item.includes(data[i]["gs_id"])) {
+            index = i;
+            break;
+        }
+    }
+    return index
+}

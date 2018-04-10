@@ -6,9 +6,9 @@ class SaldasExplorer(TethysAppBase):
     Tethys app class for SALDAS Explorer.
     """
 
-    name = 'SALDAS Explorer'
+    name = 'BLDAS Explorer'
     index = 'saldas_explorer:home'
-    icon = 'saldas_explorer/images/icon.gif'
+    icon = 'saldas_explorer/images/logo.png'
     package = 'saldas_explorer'
     root_url = 'saldas-explorer'
     color = '#d35400'

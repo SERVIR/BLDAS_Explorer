@@ -17,7 +17,7 @@ from config import SALDAS_DIR
 import rasterio
 import random
 
-def aggregateRastersQuarterly(input_dir,output_dir):
+def aggregateRastersQuarterly(input_dir,output_dir,operation):
     output_dir = os.path.join(output_dir, "")
     l = sorted(os.listdir(input_dir))
     inDs = gdal.Open(os.path.join(input_dir, l[0]))
@@ -30,7 +30,11 @@ def aggregateRastersQuarterly(input_dir,output_dir):
 
     for i in range(len(l)-2):
         array_list = [read_file(os.path.join(input_dir,x)) for x in l[i:i+3]]
-        array_out = np.mean(array_list, axis=0)
+        array_out = None
+        if operation == 'average':
+            array_out = np.mean(array_list, axis=0)
+        if operation == 'sum':
+            array_out = np.sum(array_list, axis=0)
         quarter = str(format(i + 1,'02d'))+str(format(i + 2,'02d'))+str(format(i + 3,'02d'))
         file_name = 'Quarter_' + str(quarter) + '.tif'
         driver = gdal.GetDriverByName('GTiff')
@@ -46,7 +50,7 @@ def aggregateRastersQuarterly(input_dir,output_dir):
 
         DataSet = None
 
-def aggregateRastersDekad(input_dir,output_dir):
+def aggregateRastersDekad(input_dir,output_dir,operation):
     output_dir = os.path.join(output_dir, "")
     l = sorted(os.listdir(input_dir))
     dekad_chunks = [l[i:i + 10] for i in range(0, len(l), 10)]
@@ -64,8 +68,12 @@ def aggregateRastersDekad(input_dir,output_dir):
         # array_list = [read_file(os.path.join(input_dir,x) for x in chunk]
         array_list = [read_file(os.path.join(input_dir,x)) for x in chunk]
 
-        array_out = np.mean(array_list, axis=0)
-        dekad = step + 1
+        array_out = None
+        if operation == 'average':
+            array_out = np.mean(array_list, axis=0)
+        if operation == 'sum':
+            array_out = np.sum(array_list, axis=0)
+        dekad = format(step + 1,'02d')
         print(dekad)
         file_name = 'Dekad_' + str(dekad) + '.tif'
         driver = gdal.GetDriverByName('GTiff')
@@ -81,7 +89,7 @@ def aggregateRastersDekad(input_dir,output_dir):
 
         DataSet = None
 
-def aggregateRastersMonthly(input_dir,output_dir):
+def aggregateRastersMonthly(input_dir,output_dir,operation):
     output_dir = os.path.join(output_dir, "")
     l = sorted(os.listdir(input_dir))
     grouped = [list(g) for k, g in groupby(l, lambda x: x[4:6])]
@@ -98,7 +106,11 @@ def aggregateRastersMonthly(input_dir,output_dir):
         # array_list = [read_file(os.path.join(input_dir,x) for x in chunk]
         array_list = [read_file(os.path.join(input_dir,x)) for x in chunk]
 
-        array_out = np.mean(array_list, axis=0)
+        array_out = None
+        if operation == 'average':
+            array_out = np.mean(array_list, axis=0)
+        if operation == 'sum':
+            array_out = np.sum(array_list, axis=0)
         month = format(step + 1,'02d')
         print('Month' + str(month) + '.tif')
         file_name = 'Month_' + str(month) + '.tif'
@@ -125,13 +137,23 @@ def extractRasters(input_dir,output_dir,nc_var):
                 lis_fid = Dataset(in_loc, 'r')  # Reading the netcdf file
                 lis_var = lis_fid.variables  # Get the netCDF variables
                 xsize, ysize, GeoT, Projection, NDV = get_netcdf_info(in_loc, nc_var)
+                # print(xsize,ysize,GeoT)
                 date_str = file.split('_')[2][:8]
                 data = lis_var[nc_var][:, :]
                 data = data[::-1, :]
+                lat = lis_var['lat'][:]
+                lon = lis_var['lon'][:]
+                xmin, ymin, xmax, ymax = [lon.min(), lat.min(), lon.max(), lat.max()]
+                nrows, ncols = np.shape(data)
+                xres = (xmax - xmin) / float(ncols)
+                yres = (ymax - ymin) / float(nrows)
+                geotransform = (xmin, xres, 0, ymax, 0, -yres)
+                print(geotransform,GeoT)
+                # print(lat,lon)
                 driver = gdal.GetDriverByName('GTiff')
                 print(output_dir + str(date_str) + '.tif')
-                DataSet = driver.Create(output_dir + str(date_str) + '.tif', xsize, ysize, 1, gdal.GDT_Float32)
-                DataSet.SetGeoTransform(GeoT)
+                DataSet = driver.Create(output_dir + str(date_str) + '.tif', ncols, nrows, 1, gdal.GDT_Float32)
+                DataSet.SetGeoTransform(geotransform)
                 srs = osr.SpatialReference()
                 srs.ImportFromEPSG(4326)
                 DataSet.SetProjection(srs.ExportToWkt())
@@ -155,10 +177,19 @@ def extractSoilRasters(input_dir,output_dir,nc_var,profile):
                 date_str = file.split('_')[2][:8]
                 data = lis_var[nc_var][profile, :, :]
                 data = data[::-1, :]
+                lat = lis_var['lat'][:]
+                lon = lis_var['lon'][:]
+                xmin, ymin, xmax, ymax = [lon.min(), lat.min(), lon.max(), lat.max()]
+                nrows, ncols = np.shape(data)
+                xres = (xmax - xmin) / float(ncols)
+                yres = (ymax - ymin) / float(nrows)
+                geotransform = (xmin, xres, 0, ymax, 0, -yres)
+                print(geotransform, GeoT)
+                # print(lat,lon)
                 driver = gdal.GetDriverByName('GTiff')
                 print(output_dir + str(date_str) + '.tif')
-                DataSet = driver.Create(output_dir + str(date_str) + '.tif', xsize, ysize, 1, gdal.GDT_Float32)
-                DataSet.SetGeoTransform(GeoT)
+                DataSet = driver.Create(output_dir + str(date_str) + '.tif', ncols, nrows, 1, gdal.GDT_Float32)
+                DataSet.SetGeoTransform(geotransform)
                 srs = osr.SpatialReference()
                 srs.ImportFromEPSG(4326)
                 DataSet.SetProjection(srs.ExportToWkt())
@@ -197,8 +228,8 @@ def get_netcdf_info(filename,var_name):
 
         return xsize,ysize,GeoT,Projection,NDV #Return data that will be used to convert the shapefile
 
-def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd):
-    print("just got to the upload tiff function")
+def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd,variable,year):
+
     headers = {
         'Content-type': 'image/tiff',
     }
@@ -209,16 +240,23 @@ def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd):
             sys.exit()
         if file.endswith('.tif'):
             data = open(os.path.join(dir,file),'rb').read() #Read the file
-            store_name = file.split('.')[0] #Creating the store name dynamically
-
+            store_name = variable + '_' +year+str(file.split('.')[0]).split('_')[1] #Creating the store name dynamically
+            print(store_name)
             request_url = '{0}workspaces/{1}/coveragestores/{2}/file.geotiff'.format(geoserver_rest_url,workspace,store_name) #Creating the rest url
-            print(request_url)
+            # print(request_url)
             requests.put(request_url,verify=False,headers=headers,data=data,auth=(uname,pwd)) #Creating the resource on the geoserver
 
-#upload_tiff('/media/sf_Downloads/SALDAS_TemperatureDekad/','http://192.168.10.75:8181/geoserver/rest/','saldasTT','Saldas','Sa1das##123')
+#upload_tiff('/media/sf_Downloads/SALDAS_EvapDekad/','http://192.168.10.75:8181/geoserver/rest/','saldasDD','Saldas','Sa1das##123','evap','2017')
+#upload_tiff('/media/sf_Downloads/SALDAS_EvapMonthly/','http://192.168.10.75:8181/geoserver/rest/','saldasMM','Saldas','Sa1das##123','evap','2017')
+#upload_tiff('/media/sf_Downloads/SALDAS_EvapQuarterly/','http://192.168.10.75:8181/geoserver/rest/','saldas3M','Saldas','Sa1das##123','evap','2017')
 #aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_TemperatureMonthly/','/media/sf_Downloads/SALDAS_TemperatureQuarterly/')
 #aggregateRastersMonthly('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureMonthly/')
 #aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/')
 #aggregateRasterQuarterly('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/')
-#extractRasters(SALDAS_DIR,'/media/sf_Downloads/SALDAS_SurfaceRunoff/','Qs_tavg')
-#extractSoilRasters(SALDAS_DIR, '/media/sf_Downloads/SALDAS_SoilProfile1/', 'SoilMoist_tavg', 0)
+#extractRasters(SALDAS_DIR,'/media/sf_Downloads/SALDAS_Evap/','Evap_tavg')
+#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Evap/','/media/sf_Downloads/SALDAS_EvapDekad/','average')
+#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Rain/','/media/sf_Downloads/SALDAS_RainDekad/','sum')
+#aggregateRastersDekad('/media/sf_Downloads/SALDAS_SM/','/media/sf_Downloads/SALDAS_SMDekad/','average')
+#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/','average')
+#aggregateRastersMonthly('/media/sf_Downloads/SALDAS_Evap/','/media/sf_Downloads/SALDAS_EvapMonthly/','average')
+#aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_EvapMonthly/','/media/sf_Downloads/SALDAS_EvapQuarterly/','average')

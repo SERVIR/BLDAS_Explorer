@@ -17,16 +17,27 @@ var LIBRARY_OBJECT = (function() {
     /************************************************************************
      *                      MODULE LEVEL / GLOBAL VARIABLES
      *************************************************************************/
-    var current_layer,
+    var animationDelay,
+        current_layer,
         dekad_options,
+        districtLayer,
         element,
         $interactionModal,
         layers,
+        $loading,
         map,
         month_options,
         popup,
+        $plotter,
         $plotModal,
         public_interface,			// Object returned by the module
+        quarter_options,
+        selectedFeatures,
+        select_layer,
+        select_source,
+        sliderInterval,
+        slider_max,
+        styling,
         variable_data,
         $tsplotModal,
         wms_workspace,
@@ -39,7 +50,8 @@ var LIBRARY_OBJECT = (function() {
     /************************************************************************
      *                    PRIVATE FUNCTION DECLARATIONS
      *************************************************************************/
-    var add_wms,
+    var animate,
+        add_wms,
         clear_coords,
         get_plot,
         get_styling,
@@ -49,7 +61,8 @@ var LIBRARY_OBJECT = (function() {
         init_jquery_vars,
         init_dropdown,
         init_all,
-        init_map;
+        init_map,
+        update_wms;
 
 
     /************************************************************************
@@ -67,8 +80,16 @@ var LIBRARY_OBJECT = (function() {
         dekad_options = JSON.parse(dekad_options);
         month_options = $meta_element.attr('data-month-options');
         month_options = JSON.parse(month_options);
+        quarter_options = $meta_element.attr('data-quarter-options');
+        quarter_options = JSON.parse(quarter_options);
+        variable_data = $meta_element.attr('data-variable-info');
+        variable_data = JSON.parse(variable_data);
         $plotModal = $("#plot-modal");
         $tsplotModal = $("#ts-plot-modal");
+        $loading = $('#view-file-loading');
+        $plotter = $('#plotter');
+        animationDelay  = 1000;
+        sliderInterval = {};
     };
 
     init_dropdown = function () {
@@ -77,6 +98,13 @@ var LIBRARY_OBJECT = (function() {
         $(".interval_table").select2();
         $(".date_table").select2();
         $(".variable_table_plot").select2();
+
+        variable_data.forEach(function(item,i){
+                        var new_option = new Option(item["display_name"],item["id"]);
+                        $("#variable_table_plot").append(new_option);
+                         var viz_option = new Option(item["display_name"],item["gs_id"]);
+                        $("#var_table").append(viz_option);
+                    });
     };
 
     init_map = function() {
@@ -96,6 +124,7 @@ var LIBRARY_OBJECT = (function() {
         wms_source = new ol.source.ImageWMS();
 
         wms_layer = new ol.layer.Image({
+            name: 'wms_layer',
             source: wms_source
         });
 
@@ -123,8 +152,38 @@ var LIBRARY_OBJECT = (function() {
             })
         });
 
+        var default_style = new ol.style.Style({
+            fill: new ol.style.Fill({
+                color: [250,250,250,0.1]
+            }),
+            stroke: new ol.style.Stroke({
+                color: [220,220,220,1],
+                width: 4
+            })
+        });
 
-        layers = [baseLayer,wms_layer,vector_layer];
+        select_source =  new ol.source.Vector();
+
+        select_layer = new ol.layer.Vector({
+            name:'select_layer',
+            source: select_source,
+            style:default_style
+        });
+
+        districtLayer = new ol.layer.Tile(
+            {
+                name:'districts',
+                source: new ol.source.TileWMS((
+                    {
+
+                        crossOrigin: 'anonymous',         // // KS Refactor Design 2016 Override // This should enable screenshot export around the CORS issue with Canvas.
+                        url: 'http://tethys.servirglobal.net:8181/geoserver/wms',
+                        params: {'LAYERS': 'utils:adminOne', 'TILED': true },
+                        serverType: 'geoserver'
+                    }))
+            });
+
+        layers = [baseLayer,wms_layer,districtLayer,vector_layer,select_layer];
 
         map = new ol.Map({
             target: document.getElementById("map"),
@@ -132,7 +191,7 @@ var LIBRARY_OBJECT = (function() {
             view: view
         });
 
-
+        districtLayer.setVisible(false);
         map.crossOrigin = 'anonymous';
         element = document.getElementById('popup');
 
@@ -234,18 +293,24 @@ var LIBRARY_OBJECT = (function() {
 
         $('#interaction-type').change(function (e) {
             featureType = $(this).find('option:selected').val();
+            clear_coords();
+            select_source.clear();
+            selectedFeatures = [];
+            vector_layer.getSource().clear();
+            districtLayer.setVisible(false);
+            map.removeInteraction(draw);
             if(featureType == 'None'){
                 $('#data').val('');
-                clear_coords();
+
                 map.removeInteraction(draw);
                 vector_layer.getSource().clear();
             }else if(featureType == 'Point')
             {
-                clear_coords();
                 addInteraction(featureType);
             }else if(featureType == 'Polygon'){
-                clear_coords();
                 addInteraction(featureType);
+            }else if(featureType == 'District'){
+                districtLayer.setVisible(true);
             }
         }).change();
 
@@ -275,14 +340,14 @@ var LIBRARY_OBJECT = (function() {
              $(element).popover('destroy');
 
 
-            if ($("#interaction-type").find('option:selected').val()=="None") {
+            if ($("#interaction-type").find('option:selected').val()=="None" || $("#interaction-type").find('option:selected').val()=="District") {
                 var clickCoord = evt.coordinate;
-                popup.setPosition(clickCoord);
                 var view = map.getView();
                 var viewResolution = view.getResolution();
 
                 var wms_url = current_layer.getSource().getGetFeatureInfoUrl(evt.coordinate, viewResolution, view.getProjection(), {'INFO_FORMAT': 'application/json'}); //Get the wms url for the clicked point
-
+            if (current_layer.get('name')=='wms_layer') {
+                popup.setPosition(clickCoord);
                 if (wms_url) {
                     //Retrieving the details for clicked point via the url
                     $.ajax({
@@ -310,6 +375,38 @@ var LIBRARY_OBJECT = (function() {
                     });
                 }
                 }
+            else if(current_layer.get('name')=='districts'){
+
+             $.ajax({
+                        type: "GET",
+                        url: wms_url,
+                        dataType: 'json',
+                        success: function (result) {
+                            select_source.clear();
+                            selectedFeatures = [];
+                            var selFeature = result["features"][0];
+                            var format = new ol.format.GeoJSON({
+                                defaultDataProjection: 'EPSG:4326',
+                                featureProjection: 'EPSG:3857'
+                            });
+                            var feature = format.readFeature(selFeature, {
+                                dataProjection: 'EPSG:4326',
+                                featureProjection: 'EPSG:3857'
+                            });
+
+                            if(selectedFeatures.indexOf(JSON.stringify(selFeature))== -1){
+                                selectedFeatures.push(JSON.stringify(selFeature));
+                                select_source.addFeature(feature);
+                            }
+
+                        },
+                        error: function (XMLHttpRequest, textStatus, errorThrown) {
+                            console.log(Error);
+                        }
+                    });
+
+            }
+            }
         });
 
         map.on('pointermove', function(evt) {
@@ -318,7 +415,7 @@ var LIBRARY_OBJECT = (function() {
             }
             var pixel = map.getEventPixel(evt.originalEvent);
             var hit = map.forEachLayerAtPixel(pixel, function(layer) {
-                if (layer != layers[0] && layer != layers[2]){
+                if (layer != layers[0] && layer != layers[3] && layer != layers[4]){
                     current_layer = layer;
                     return true;}
             });
@@ -348,22 +445,17 @@ var LIBRARY_OBJECT = (function() {
 
     };
 
-    get_styling = function(variable,min,max,scale){
-
-        //var index = variable_data.findIndex(function(x){return variable.includes(x["id"])});
-        var index = find_var_index(variable,variable_data);
-        var start = variable_data[index]["start"];
-        var end = variable_data[index]["end"];
+    get_styling = function(start,end,scale){
 
         var sld_color_string = '';
         if(scale[scale.length-1] == 0){
             var colors = chroma.scale([start,start]).mode('lab').correctLightness().colors(20);
-            gen_color_bar(colors,scale);
+            //gen_color_bar(colors,scale);
             var color_map_entry = '<ColorMapEntry color="'+colors[0]+'" quantity="'+scale[0]+'" label="label1" opacity="0.7"/>';
             sld_color_string += color_map_entry;
         }else{
             var colors = chroma.scale([start,end]).mode('lab').correctLightness().colors(20);
-            gen_color_bar(colors,scale);
+            //gen_color_bar(colors,scale);
             colors.forEach(function(color,i){
                 var color_map_entry = '<ColorMapEntry color="'+color+'" quantity="'+scale[i]+'" label="label'+i+'" opacity="0.7"/>';
                 sld_color_string += color_map_entry;
@@ -378,35 +470,27 @@ var LIBRARY_OBJECT = (function() {
 
         map.removeLayer(wms_layer);
         var layer_name = workspace+":"+variable+"_"+year+date_type;
-        //var layer_name = 'graceglobal:2015_07_15'
-        console.log(layer_name);
-        //var styling = get_styling(data.variable,data.min,data.max,data.scale);
-        // var sld_string = '<StyledLayerDescriptor version="1.0.0"><NamedLayer><Name>'+layer_name+'</Name><UserStyle><FeatureTypeStyle><Rule>\
-          //  <RasterSymbolizer> \
-            //<ColorMap> \
-            //<ColorMapEntry color="#2471a3" quantity="-9999" label="nodata" opacity="0.7" />\
-             //   <ColorMapEntry color="#2471a3" quantity="-40" label="1" opacity="0.7" />\
-             //   <ColorMapEntry color="#2e86c1" quantity="-30" label="1" opacity="0.7" />\
-              //  <ColorMapEntry color="#3498db" quantity="-20" label="1" opacity="0.7" />\
-               // <ColorMapEntry color="#5dade2" quantity="-10" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#85c1e9" quantity="-5" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#a3e4d7" quantity="0" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#d5f5e3" quantity="5" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#f9e79f" quantity="10" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#f4d03f" quantity="15" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#f5b041" quantity="20" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#eb984e" quantity="25" label="1" opacity="0.7" />\
-                //<ColorMapEntry color="#e57e22" quantity="30" label="1" opacity="0.7" /></ColorMap>\
-            //</RasterSymbolizer>\
-            //</Rule>\
-            //</FeatureTypeStyle>\
-            //</UserStyle>\
-            //</NamedLayer>\
-            //</StyledLayerDescriptor>';
+        //console.log(layer_name);
+        var index = find_gsvar_index(variable,variable_data);
+        console.log(variable_data[index]);
+        styling = get_styling(variable_data[index]["start"],variable_data[index]["end"],variable_data[index]["scale"]);
+        console.log(styling);
+        var sld_string = '<StyledLayerDescriptor version="1.0.0"><NamedLayer><Name>'+layer_name+'</Name><UserStyle><FeatureTypeStyle><Rule>\
+        <RasterSymbolizer> \
+        <ColorMap type="ramp"> \
+        <ColorMapEntry color="#f00" quantity="-9999" label="label0" opacity="0"/>'+
+            styling+'</ColorMap>\
+        </RasterSymbolizer>\
+        </Rule>\
+        </FeatureTypeStyle>\
+        </UserStyle>\
+        </NamedLayer>\
+        </StyledLayerDescriptor>';
+
         //'SLD_BODY':sld_string
         wms_source = new ol.source.ImageWMS({
             url: 'http://192.168.10.75:8181/geoserver/wms',
-            params: {'LAYERS':layer_name},
+            params: {'LAYERS':layer_name,'SLD_BODY':sld_string},
             serverType: 'geoserver',
             crossOrigin: 'Anonymous'
         });
@@ -424,9 +508,29 @@ var LIBRARY_OBJECT = (function() {
 
     };
 
+    update_wms = function(workspace,variable,year,date_type,interval_type){
+
+        var layer_name = workspace+":"+variable+"_"+year+date_type;
+        var sld_string = '<StyledLayerDescriptor version="1.0.0"><NamedLayer><Name>'+layer_name+'</Name><UserStyle><FeatureTypeStyle><Rule>\
+        <RasterSymbolizer> \
+        <ColorMap type="ramp"> \
+        <ColorMapEntry color="#f00" quantity="-9999" label="label0" opacity="0"/>'+
+            styling+'</ColorMap>\
+        </RasterSymbolizer>\
+        </Rule>\
+        </FeatureTypeStyle>\
+        </UserStyle>\
+        </NamedLayer>\
+        </StyledLayerDescriptor>';
+
+        wms_source.updateParams({'LAYERS':layer_name,'SLD_BODY':sld_string});
+
+    };
+
     gen_slider = function(interval){
         if(interval == 'DD'){
 
+        slider_max = dekad_options.length;
         $("#slider").slider({
             value:1,
             min: 0,
@@ -434,12 +538,13 @@ var LIBRARY_OBJECT = (function() {
             step: 1, //Assigning the slider step based on the depths that were retrieved in the controller
             animate:"fast",
             slide: function( event, ui ) {
+
             }
 
         });
 
         }else if(interval == 'MM'){
-
+            slider_max = month_options.length + 1;
             $( "#slider").slider({
             value:1,
             min: 0,
@@ -447,6 +552,20 @@ var LIBRARY_OBJECT = (function() {
             step: 1, //Assigning the slider step based on the depths that were retrieved in the controller
             animate:"fast",
             slide: function( event, ui ) {
+
+            }
+
+            });
+        }else if(interval == '3M'){
+        slider_max = quarter_options.length + 1;
+            $( "#slider").slider({
+            value:1,
+            min: 0,
+            max: quarter_options.length - 1,
+            step: 1, //Assigning the slider step based on the depths that were retrieved in the controller
+            animate:"fast",
+            slide: function( event, ui ) {
+
             }
 
             });
@@ -454,8 +573,11 @@ var LIBRARY_OBJECT = (function() {
     };
 
     get_plot = function(){
+    $('.info').html('');
     $plotModal.modal('hide');
     $tsplotModal.modal('show');
+    $loading.removeClass('hidden');
+    $plotter.addClass('hidden');
         var variable = $("#variable_table_plot option:selected").val();
         var point = $("#point-lat-lon").val();
         var polygon = $("#poly-lat-lon").val();
@@ -465,14 +587,16 @@ var LIBRARY_OBJECT = (function() {
                 console.log(data.time_series);
 
                     if(data.interaction == "point" || data.interaction == "polygon"){
-
+                    var index = find_var_index(variable,variable_data);
+                    var display_name = variable_data[index]["display_name"];
+                    var units = variable_data[index]["units"];
                     $("#plotter").highcharts({
                         chart: {
                             type:'area',
                             zoomType: 'x'
                         },
                         title: {
-                            text:'Test'
+                            text: 'Values for ' + display_name
                             // style: {
                             //     fontSize: '13px',
                             //     fontWeight: 'bold'
@@ -491,7 +615,7 @@ var LIBRARY_OBJECT = (function() {
                         },
                         yAxis: {
                             title: {
-                                text: 'Units'
+                                text: units
                             }
 
                         },
@@ -500,16 +624,60 @@ var LIBRARY_OBJECT = (function() {
                         },
                         series: [{
                             data:data.time_series,
-                            name: 'Test'
+                            name: display_name
                         }]
                     });
-
+                    $plotter.removeClass('hidden');
+                    $loading.addClass('hidden');
                 }
+                }else{
+                 $('.info').html('<b>Error processing the request. Please be sure to click on a feature.'+data.error+'</b>');
+                 $('#info').removeClass('hidden');
+                 $plotter.removeClass('hidden');
+                 $loading.addClass('hidden');
                 }
         });
     };
 
     $("#btn-get-plot").click(get_plot);
+
+
+    animate = function(){
+        var sliderVal = $("#slider").slider("value");
+
+        sliderInterval = setInterval(function() {
+            $("#slider").slider("value", sliderVal);
+            sliderVal += 1;
+            if (sliderVal===slider_max - 1) sliderVal=0;
+        }, animationDelay);
+    };
+
+    $(".btn-run").on("click", animate);
+    //Set the slider value to the current value to start the animation at the );
+    $(".btn-stop").on("click", function() {
+        //Call clearInterval to stop the animation.
+        clearInterval(sliderInterval);
+    });
+
+    $(".btn-increase").on("click", function() {
+        clearInterval(sliderInterval);
+
+        if(animationDelay > 250){
+
+            animationDelay = animationDelay - 250;
+            $("#speed").val((1/(animationDelay/1000)).toFixed(2));
+            animate();
+        }
+
+    });
+
+    //Decrease the slider timer when you click decrease the speed
+    $(".btn-decrease").on("click", function() {
+        clearInterval(sliderInterval);
+        animationDelay = animationDelay + 250;
+        $("#speed").val((1/(animationDelay/1000)).toFixed(2));
+        animate();
+    });
 
     /************************************************************************
      *                        DEFINE PUBLIC INTERFACE
@@ -529,7 +697,7 @@ var LIBRARY_OBJECT = (function() {
         init_all();
 
         $("#var_table").change(function(){
-
+            $( "#date_table" ).change();
         });
 
         $("#interval_table").change(function(){
@@ -557,7 +725,18 @@ var LIBRARY_OBJECT = (function() {
                             $("#date_table").append(new_option);
                         }
                     });
+            }else if(interval_type == '3M'){
+
+            quarter_options.forEach(function(date,i){
+                        var new_option = new Option(date[1],date[0]);
+                        if(i==0){
+                            $("#date_table").append(new_option).trigger('change');
+                        }else{
+                            $("#date_table").append(new_option);
+                        }
+                    });
             }
+
         }).change();
 
         $("#date_table").change(function(){
@@ -568,8 +747,23 @@ var LIBRARY_OBJECT = (function() {
             console.log(variable,year,date_type,interval_type);
             var workspace = "saldas"+interval_type;
             add_wms(workspace,variable,year,date_type,interval_type);
-
+            var selected_option = $(this).find('option:selected').index();
+            $("#slider").slider("value", selected_option);
+            //$('#slider').trigger('change');
         }).change();
+
+        $("#slider").on("slidechange", function(event, ui) {
+            var date_text = $("#date_table option")[ui.value].text;
+            $( "#slider-text" ).text(date_text); //Get the value from the slider
+            var date_value = $("#date_table option")[ui.value].value;
+            var interval_type = ($("#interval_table option:selected").val());
+            var year = ($("#year_table option:selected").val());
+            var variable = ($("#var_table option:selected").val());
+            console.log(variable,year,date_value,interval_type);
+            var workspace = "saldas"+interval_type;
+            update_wms(workspace,variable,year,date_value,interval_type);
+
+        });
 
     });
 
