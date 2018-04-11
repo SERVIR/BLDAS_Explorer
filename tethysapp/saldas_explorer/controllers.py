@@ -6,6 +6,7 @@ import json
 from django.http import JsonResponse
 from .utils import *
 
+
 def home(request):
     """
     Controller for the app home page.
@@ -44,24 +45,51 @@ def get_plot(request):
         info = request.POST
 
         variable = info.get("variable")
-
+        interaction = info.get('interaction')
+        interval = info.get('interval')
+        interval = interval.lower()
+        year = info.get('year')
         return_obj["variable"] = variable
 
-        point = request.POST['point']
-        polygon = request.POST['polygon']
+        var_list = get_variables_meta()
+        var_idx = next((index for (index, d) in enumerate(var_list) if d["id"] == variable), None)
 
-        if point:
+        suffix = (var_list[var_idx]["gs_id"])
+
+        # point = request.POST['point']
+        # polygon = request.POST['polygon']
+        if interaction == 'District':
+            geom_data = request.POST.getlist("geom_data[]")
+
+            ts = get_feature_stats(suffix,geom_data,interval,year)
+            return_obj["time_series"] = ts
+            return_obj["success"] = "success"
+            return_obj["interaction"] = "district"
+
+        if interaction == 'Point':
             try:
-                ts = get_pt_ts(variable,point)
+                geom_data = request.POST["geom_data"]
+                coords = geom_data.split(',')
+                lat = round(float(coords[1]), 2)
+                lon = round(float(coords[0]), 2)
+                print(geom_data)
+                # ts = get_pt_ts(variable,geom_data)
+                ts = get_point_stats(suffix,lat,lon,interval,year)
                 return_obj["time_series"] = ts
                 return_obj["interaction"] = "point"
                 return_obj["success"] = "success"
             except Exception as e:
                 return_obj["error"] = "Error Processing Request: "+ str(e)
 
-        if polygon:
+        if interaction == 'Polygon':
+            geom_data = request.POST["geom_data"]
 
-            return_obj["interaction"] = "polygon"
-            return_obj["success"] = "success"
+            try:
+                ts = get_polygon_stats(suffix,geom_data,interval,year)
+                return_obj["time_series"] = ts
+                return_obj["interaction"] = "polygon"
+                return_obj["success"] = "success"
+            except Exception as e:
+                return_obj["error"] = "Error processing request: " + str(e)
 
     return JsonResponse(return_obj)

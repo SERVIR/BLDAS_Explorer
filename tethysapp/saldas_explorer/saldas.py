@@ -8,6 +8,7 @@ import numpy as np
 from itertools import groupby
 import tempfile, shutil,sys
 import calendar
+from utils import *
 from netCDF4 import Dataset
 import gdal
 import osr
@@ -16,6 +17,7 @@ import requests
 from config import SALDAS_DIR
 import rasterio
 import random
+from collections import defaultdict
 
 def aggregateRastersQuarterly(input_dir,output_dir,operation):
     output_dir = os.path.join(output_dir, "")
@@ -30,13 +32,15 @@ def aggregateRastersQuarterly(input_dir,output_dir,operation):
 
     for i in range(len(l)-2):
         array_list = [read_file(os.path.join(input_dir,x)) for x in l[i:i+3]]
+        year = l[i].split('.')[0][:4]
         array_out = None
         if operation == 'average':
             array_out = np.mean(array_list, axis=0)
         if operation == 'sum':
             array_out = np.sum(array_list, axis=0)
         quarter = str(format(i + 1,'02d'))+str(format(i + 2,'02d'))+str(format(i + 3,'02d'))
-        file_name = 'Quarter_' + str(quarter) + '.tif'
+        file_name = year + str(quarter) + '.tif'
+        print(file_name)
         driver = gdal.GetDriverByName('GTiff')
         DataSet = driver.Create(output_dir + str(file_name), xsize, ysize, 1, gdal.GDT_Float32)
         DataSet.SetGeoTransform(GeoT)
@@ -53,9 +57,16 @@ def aggregateRastersQuarterly(input_dir,output_dir,operation):
 def aggregateRastersDekad(input_dir,output_dir,operation):
     output_dir = os.path.join(output_dir, "")
     l = sorted(os.listdir(input_dir))
-    dekad_chunks = [l[i:i + 10] for i in range(0, len(l), 10)]
 
-    print(os.path.join(input_dir, l[0]))
+    d = defaultdict(list)
+    for file in l:
+        dt_str = file.split('.')[0]
+        day = dt_str[-2:]
+        month = dt_str[4:6]
+        year = dt_str[:4]
+        idx = getIndexBasedOnDate(day,month,year)
+        d[idx].append(file)
+
     inDs = gdal.Open(os.path.join(input_dir, l[0]))
 
     ysize = inDs.RasterYSize
@@ -64,18 +75,28 @@ def aggregateRastersDekad(input_dir,output_dir,operation):
     Projection = inDs.GetProjection()
     NDV = inDs.GetRasterBand(1).GetNoDataValue()
 
-    for step,chunk in enumerate(dekad_chunks):
-        # array_list = [read_file(os.path.join(input_dir,x) for x in chunk]
-        array_list = [read_file(os.path.join(input_dir,x)) for x in chunk]
+    for step,key in enumerate(d):
+
+        month = d[key][0].split('.')[0][4:6]
+        dd_val = d[key][0].split('.')[0][-2:]
+        year = d[key][0].split('.')[0][:4]
+        if dd_val == '01':
+            dekad = '01'
+        elif dd_val == '11':
+            dekad = '02'
+        elif dd_val == '21':
+            dekad = '03'
+
+        array_list = [read_file(os.path.join(input_dir,x)) for x in d[key]]
 
         array_out = None
         if operation == 'average':
             array_out = np.mean(array_list, axis=0)
         if operation == 'sum':
             array_out = np.sum(array_list, axis=0)
-        dekad = format(step + 1,'02d')
-        print(dekad)
-        file_name = 'Dekad_' + str(dekad) + '.tif'
+
+        file_name = year + str(month)+str(dekad) + '.tif'
+        print(file_name)
         driver = gdal.GetDriverByName('GTiff')
         DataSet = driver.Create(output_dir + str(file_name), xsize, ysize, 1, gdal.GDT_Float32)
         DataSet.SetGeoTransform(GeoT)
@@ -104,6 +125,7 @@ def aggregateRastersMonthly(input_dir,output_dir,operation):
     # print(NDV)
     for step,chunk in enumerate(grouped):
         # array_list = [read_file(os.path.join(input_dir,x) for x in chunk]
+        year = chunk[0].split('.')[0][:4]
         array_list = [read_file(os.path.join(input_dir,x)) for x in chunk]
 
         array_out = None
@@ -112,8 +134,9 @@ def aggregateRastersMonthly(input_dir,output_dir,operation):
         if operation == 'sum':
             array_out = np.sum(array_list, axis=0)
         month = format(step + 1,'02d')
-        print('Month' + str(month) + '.tif')
-        file_name = 'Month_' + str(month) + '.tif'
+
+        file_name = year + str(month) + '.tif'
+        print(file_name)
         driver = gdal.GetDriverByName('GTiff')
         DataSet = driver.Create(output_dir + str(file_name), xsize, ysize, 1, gdal.GDT_Float32)
         DataSet.SetGeoTransform(GeoT)
@@ -254,9 +277,9 @@ def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd,variable,year):
 #aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/')
 #aggregateRasterQuarterly('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/')
 #extractRasters(SALDAS_DIR,'/media/sf_Downloads/SALDAS_Evap/','Evap_tavg')
-#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Evap/','/media/sf_Downloads/SALDAS_EvapDekad/','average')
-#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Rain/','/media/sf_Downloads/SALDAS_RainDekad/','sum')
-#aggregateRastersDekad('/media/sf_Downloads/SALDAS_SM/','/media/sf_Downloads/SALDAS_SMDekad/','average')
-#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/','average')
-#aggregateRastersMonthly('/media/sf_Downloads/SALDAS_Evap/','/media/sf_Downloads/SALDAS_EvapMonthly/','average')
+#aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_temp_dd/','average')
+#aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_rain_mm/','/media/sf_Downloads/SALDAS_rain_3m/','sum')
+#aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_soilMoist_mm/','/media/sf_Downloads/SALDAS_soilMoist_3m/','average')
+#aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_temp_mm/','/media/sf_Downloads/SALDAS_temp_3m/','average')
+#aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_evap_mm/','/media/sf_Downloads/SALDAS_evap_3m/','average')
 #aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_EvapMonthly/','/media/sf_Downloads/SALDAS_EvapQuarterly/','average')

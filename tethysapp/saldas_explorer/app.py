@@ -34,6 +34,16 @@ class SaldasExplorer(TethysAppBase):
                 url='saldas-explorer/get-plot',
                 controller='saldas_explorer.controllers.get_plot'
             ),
+            UrlMap(
+                name='get-point-stats',
+                url='saldas-explorer/api/getPointStats',
+                controller='saldas_explorer.api.get_point_ts'
+            ),
+            UrlMap(
+                name='get-feature-stats',
+                url='saldas-explorer/api/getFeatureStats',
+                controller='saldas_explorer.api.geo_json_stats'
+            ),
         )
 
         return url_maps
