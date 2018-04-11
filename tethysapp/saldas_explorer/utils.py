@@ -168,7 +168,7 @@ def get_feature_stats(suffix,geom_data,interval,year):
 
     return json_obj
 
-def get_polygon_stats(variable,geom_data,interval,year):
+def get_polygon_stats(suffix,geom_data,interval,year):
     json_obj = {}
 
     input_folder = os.path.join(ROOT_DIR,str(suffix) + '_' + str(interval))

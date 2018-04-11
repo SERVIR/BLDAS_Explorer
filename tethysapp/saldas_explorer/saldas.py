@@ -251,7 +251,7 @@ def get_netcdf_info(filename,var_name):
 
         return xsize,ysize,GeoT,Projection,NDV #Return data that will be used to convert the shapefile
 
-def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd,variable,year):
+def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd,variable):
 
     headers = {
         'Content-type': 'image/tiff',
@@ -263,15 +263,15 @@ def upload_tiff(dir,geoserver_rest_url,workspace,uname,pwd,variable,year):
             sys.exit()
         if file.endswith('.tif'):
             data = open(os.path.join(dir,file),'rb').read() #Read the file
-            store_name = variable + '_' +year+str(file.split('.')[0]).split('_')[1] #Creating the store name dynamically
+            store_name = variable + '_' +str(file.split('.')[0]) #Creating the store name dynamically
             print(store_name)
             request_url = '{0}workspaces/{1}/coveragestores/{2}/file.geotiff'.format(geoserver_rest_url,workspace,store_name) #Creating the rest url
             # print(request_url)
             requests.put(request_url,verify=False,headers=headers,data=data,auth=(uname,pwd)) #Creating the resource on the geoserver
 
-#upload_tiff('/media/sf_Downloads/SALDAS_EvapDekad/','http://192.168.10.75:8181/geoserver/rest/','saldasDD','Saldas','Sa1das##123','evap','2017')
-#upload_tiff('/media/sf_Downloads/SALDAS_EvapMonthly/','http://192.168.10.75:8181/geoserver/rest/','saldasMM','Saldas','Sa1das##123','evap','2017')
-#upload_tiff('/media/sf_Downloads/SALDAS_EvapQuarterly/','http://192.168.10.75:8181/geoserver/rest/','saldas3M','Saldas','Sa1das##123','evap','2017')
+# upload_tiff('/media/sf_Downloads/SALDAS_ROOT/temp_dd','http://192.168.10.75:8181/geoserver/rest/','saldasDD','Saldas','Sa1das##123','temp')
+# upload_tiff('/media/sf_Downloads/SALDAS_ROOT/temp_mm','http://192.168.10.75:8181/geoserver/rest/','saldasMM','Saldas','Sa1das##123','temp')
+# upload_tiff('/media/sf_Downloads/SALDAS_ROOT/temp_3m','http://192.168.10.75:8181/geoserver/rest/','saldas3M','Saldas','Sa1das##123','temp')
 #aggregateRastersQuarterly('/media/sf_Downloads/SALDAS_TemperatureMonthly/','/media/sf_Downloads/SALDAS_TemperatureQuarterly/')
 #aggregateRastersMonthly('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureMonthly/')
 #aggregateRastersDekad('/media/sf_Downloads/SALDAS_Temperature/','/media/sf_Downloads/SALDAS_TemperatureDekad/')

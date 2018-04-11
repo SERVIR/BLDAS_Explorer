@@ -15,10 +15,13 @@ def home(request):
     month_options = []
     quarter_options = []
 
-    for i in range(1,37):
-        dekad = format(i,"02d")
-        option = [dekad,'Dekad '+str(i)]
-        dekad_options.append(option)
+
+    for i in range(1,13):
+        for j in range(1,4):
+            dekad = format(j, "02d")
+            month = format(i, "02d")
+            option = [str(month)+str(dekad),'Dekad '+datetime.date(2017, i, 1).strftime('%B') +' '+str(dekad)]
+            dekad_options.append(option)
 
     for i in range(1, 13):
         month_options.append([datetime.date(2017, i, 1).strftime('%m'), datetime.date(2017, i, 1).strftime('%B')])

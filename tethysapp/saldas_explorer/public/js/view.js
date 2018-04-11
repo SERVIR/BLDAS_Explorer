@@ -395,6 +395,7 @@ var LIBRARY_OBJECT = (function() {
                             selectedFeatures = [];
                             var selFeature = result["features"][0];
                             console.log(result["features"][0]);
+                            console.log(result);
                             var format = new ol.format.GeoJSON({
                                 defaultDataProjection: 'EPSG:4326',
                                 featureProjection: 'EPSG:3857'
@@ -484,9 +485,9 @@ var LIBRARY_OBJECT = (function() {
         var layer_name = workspace+":"+variable+"_"+year+date_type;
         //console.log(layer_name);
         var index = find_gsvar_index(variable,variable_data);
-        console.log(variable_data[index]);
+//        console.log(variable_data[index]);
         styling = get_styling(variable_data[index]["start"],variable_data[index]["end"],variable_data[index]["scale"]);
-        console.log(styling);
+//        console.log(styling);
         var sld_string = '<StyledLayerDescriptor version="1.0.0"><NamedLayer><Name>'+layer_name+'</Name><UserStyle><FeatureTypeStyle><Rule>\
         <RasterSymbolizer> \
         <ColorMap type="ramp"> \
